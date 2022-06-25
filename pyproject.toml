@@ -1,5 +1,2 @@
-[tool.black]
-line-length = 128
-
 [tool.isort]
 profile = "black"
