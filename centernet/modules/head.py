@@ -38,4 +38,4 @@ class CenterNetHead(nn.Module):
         wh = self.wh_head(x)
         offset = self.offset_head(x)
 
-        return heatmap, wh, offset
+        return {"heatmap": heatmap, "wh": wh, "offset": offset}

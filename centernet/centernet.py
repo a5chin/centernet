@@ -20,6 +20,6 @@ class CenterNet(nn.Module):
     def forward(self, x: torch.Tensor):
         x = self.backbone(x)
         x = self.neck(x)
-        heatmap, wh, offset = self.bbox_head(x)
+        feature = self.bbox_head(x)
 
-        return {"heatmap": heatmap, "wh": wh, "offset": offset}
+        return feature
