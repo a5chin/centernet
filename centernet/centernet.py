@@ -4,7 +4,6 @@ import torch
 from torch import nn
 
 from .backbone import resnet18
-from .losses import GaussianFocalLoss, L1Loss
 from .modules import CenterNetHead, CTResNetNeck
 
 
