@@ -1,3 +1,5 @@
+from typing import Dict
+
 import torch
 from torch import nn
 
@@ -33,7 +35,7 @@ class CenterNetHead(nn.Module):
         )
         return layer
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         heatmap = self.heatmap_head(x)
         wh = self.wh_head(x)
         offset = self.offset_head(x)

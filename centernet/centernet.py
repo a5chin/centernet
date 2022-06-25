@@ -1,3 +1,5 @@
+from typing import Dict
+
 import torch
 from torch import nn
 
@@ -17,7 +19,7 @@ class CenterNet(nn.Module):
         )
         self.bbox_head = CenterNetHead(in_channels=64, feat_channels=64, num_classes=4)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         x = self.backbone(x)
         x = self.neck(x)
         feature = self.bbox_head(x)
