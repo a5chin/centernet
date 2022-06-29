@@ -28,4 +28,12 @@ class CenterNet(nn.Module):
         x = self.neck(x)
         feature = self.bbox_head(x)
 
-        return feature
+        loss_center_heatmap = self.loss_center_haetmap(feature["heatmap"])
+        loss_wh = self.loss_wh(["wh"])
+        loss_offset = self.loss_offset(["offset"])
+
+        return {
+            "los_center_heatmap": loss_center_heatmap,
+            "loss_wh": loss_wh,
+            "loss_offset": loss_offset,
+        }
