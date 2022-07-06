@@ -10,7 +10,7 @@ from .utils import gaussian_radius, gen_gaussian_target
 
 
 class CenterNet(nn.Module):
-    def __init__(self, num_classes) -> None:
+    def __init__(self, num_classes: int = 4) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.backbone = resnet18(pretrained=True)
@@ -27,44 +27,49 @@ class CenterNet(nn.Module):
         self.loss_wh = L1Loss(loss_weight=0.1)
         self.loss_offset = L1Loss(loss_weight=1.0)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        gt_bboxes: torch.Tensor,
-        gt_labels: torch.Tensor,
-        imgs_shape,
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         x = self.backbone(x)
         x = self.neck(x)
         feature = self.bbox_head(x)
 
+        return feature
+
+    def loss(
+        self,
+        feature: Dict[str, torch.Tensor],
+        gt_bboxes: torch.Tensor,
+        gt_labels: torch.Tensor,
+        imgs_shape: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
         target = self.get_targets(
             gt_bboxes, gt_labels, feature["heatmap"].shape, imgs_shape
         )
 
         loss_center_heatmap = self.loss_center_haetmap(
             feature["heatmap"], target["center_heatmap_target"]
-        )
-        loss_wh = self.loss_wh(feature["wh"], target["wh_target"])
+        ).sum(dim=(3, 2, 1))
+        loss_wh = self.loss_wh(feature["wh"], target["wh_target"]).sum(dim=(3, 2, 1))
         loss_offset = self.loss_offset(
             feature["offset"],
             target["offset_target"],
-        )
+        ).sum(dim=(3, 2, 1))
 
         return {
-            "loss_center_heatmap": loss_center_heatmap,
-            "loss_wh": loss_wh,
-            "loss_offset": loss_offset,
+            "loss_center_heatmap": loss_center_heatmap.mean(),
+            "loss_wh": loss_wh.mean(),
+            "loss_offset": loss_offset.mean(),
         }
 
-    def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape):
+    def get_targets(
+        self, gt_bboxes, gt_labels, feat_shape, imgs_shape
+    ) -> Dict[str, torch.Tensor]:
         """Compute regression and classification targets in multiple images.
         Args:
             gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
                 shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
             gt_labels (list[Tensor]): class indices corresponding to each box.
             feat_shape (list[int]): feature map shape with value [B, _, H, W]
-            img_shape (list[int]): image shape in [h, w] format.
+            imgs_shape (list[int]): image shape in [h, w] format.
         Returns:
             tuple[dict,float]: The float value is mean avg_factor, the dict has
                 components below:
@@ -79,8 +84,8 @@ class CenterNet(nn.Module):
         """
         bs, _, feat_h, feat_w = feat_shape
 
-        height_ratio = feat_h / img_shape[:, 1]
-        width_ratio = feat_w / img_shape[:, 2]
+        height_ratio = feat_h / imgs_shape[:, 1]
+        width_ratio = feat_w / imgs_shape[:, 2]
 
         center_heatmap_target = gt_bboxes[-1].new_zeros(
             [bs, self.num_classes, feat_h, feat_w]

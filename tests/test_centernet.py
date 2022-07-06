@@ -17,6 +17,9 @@ def test_model():
 
     model = CenterNet(num_classes=4)
 
-    out = model(images, gt_bboxes, gt_labels, imgs_shape)
+    feature = model(images)
+    loss = model.loss(feature, gt_bboxes, gt_labels, imgs_shape)
 
-    assert isinstance(out, dict)
+    assert loss["loss_center_heatmap"] is not None
+    assert loss["loss_wh"] is not None
+    assert loss["loss_offset"] is not None
