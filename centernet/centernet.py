@@ -1,4 +1,3 @@
-from turtle import width
 from typing import Dict
 
 import torch
@@ -46,13 +45,10 @@ class CenterNet(nn.Module):
         loss_center_heatmap = self.loss_center_haetmap(
             feature["heatmap"], target["center_heatmap_target"]
         )
-        loss_wh = self.loss_wh(
-            feature["wh"], target["wh_target"], target["wh_offset_target_weight"]
-        )
+        loss_wh = self.loss_wh(feature["wh"], target["wh_target"])
         loss_offset = self.loss_offset(
             feature["offset"],
             target["offset_target"],
-            target["wh_offset_target_weight"],
         )
 
         return {
@@ -99,7 +95,7 @@ class CenterNet(nn.Module):
         # gt_label = gt_labels[batch_id]
         center_x = (gt_bboxes[:, 0] + gt_bboxes[:, 2]) * width_ratio / 2
         center_y = (gt_bboxes[:, 1] + gt_bboxes[:, 3]) * height_ratio / 2
-        gt_centers = torch.cat([center_x.unsqueeze(1), center_y.unsqueeze(1)], dim = 1)
+        gt_centers = torch.cat([center_x.unsqueeze(1), center_y.unsqueeze(1)], dim=1)
 
         for j, ct in enumerate(gt_centers):
             ctx_int, cty_int = ct.int()
@@ -126,5 +122,4 @@ class CenterNet(nn.Module):
             "center_heatmap_target": center_heatmap_target,
             "wh_target": wh_target,
             "offset_target": offset_target,
-            "wh_offset_target_weight": wh_offset_target_weight,
         }

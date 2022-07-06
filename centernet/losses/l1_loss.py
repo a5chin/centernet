@@ -33,15 +33,13 @@ class L1Loss(nn.Module):
         super(L1Loss, self).__init__()
         self.loss_weight = loss_weight
 
-    def forward(self, pred, target, weight=None):
+    def forward(self, pred, target):
         """Forward function.
 
         Args:
             pred (torch.Tensor): The prediction.
             target (torch.Tensor): The learning target of the prediction.
-            weight (torch.Tensor, optional): The weight of loss for each
-                prediction. Defaults to None.
         """
-        loss_bbox = self.loss_weight * l1_loss(pred, target, weight)
+        loss_bbox = self.loss_weight * l1_loss(pred, target)
 
         return loss_bbox
