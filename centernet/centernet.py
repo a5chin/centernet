@@ -77,7 +77,6 @@ class CenterNet(nn.Module):
                 - wh_offset_target_weight (Tensor): weights of wh and offset \
                     predict, shape (B, 2, H, W).
         """
-        # img_h, img_w = img_shape[:2]
         bs, _, feat_h, feat_w = feat_shape
 
         height_ratio = feat_h / img_shape[:, 1]
