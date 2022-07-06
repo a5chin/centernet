@@ -34,7 +34,6 @@ def gen_gaussian_target(heatmap, center, radius, k=1):
     Returns:
         out_heatmap (Tensor): Updated heatmap covered by gaussian kernel.
     """
-    print(11111111111111111111111111111111)
     diameter = 2 * radius + 1
     gaussian_kernel = gaussian2D(
         radius, sigma=diameter / 6, dtype=heatmap.dtype, device=heatmap.device

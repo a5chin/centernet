@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 
 current_dir = Path(__file__).resolve().parent
-sys.path.append(str(current_dir) + "/../")
+sys.path.append((current_dir.parent))
 
 from centernet import CenterNet
 
