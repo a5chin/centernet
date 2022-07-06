@@ -10,9 +10,9 @@ from centernet import CenterNet
 
 
 def test_model():
-    images = torch.randn(16, 3, 512, 512)
-    gt_bboxes = torch.randn(16, 4)
-    gt_labels = torch.randn(16)
+    images = torch.randn(16, 3, 512, 512).clamp(min=0.0)
+    gt_bboxes = torch.Tensor([0.0260, 0.5886, 2.1809, 1.9412]).repeat(16, 1)
+    gt_labels = torch.randint(1, 5, (16,))
     imgs_shape = torch.randint(500, 1000, (16, 3))
 
     model = CenterNet(num_classes=4)

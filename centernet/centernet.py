@@ -1,3 +1,4 @@
+from turtle import width
 from typing import Dict
 
 import torch
@@ -43,7 +44,7 @@ class CenterNet(nn.Module):
         )
 
         loss_center_heatmap = self.loss_center_haetmap(
-            feature["heatmap"], target["center_heatmat_target"]
+            feature["heatmap"], target["center_heatmap_target"]
         )
         loss_wh = self.loss_wh(
             feature["wh"], target["wh_target"], target["wh_offset_target_weight"]
@@ -58,4 +59,72 @@ class CenterNet(nn.Module):
             "loss_center_heatmap": loss_center_heatmap,
             "loss_wh": loss_wh,
             "loss_offset": loss_offset,
+        }
+
+    def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape):
+        """Compute regression and classification targets in multiple images.
+        Args:
+            gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
+                shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
+            gt_labels (list[Tensor]): class indices corresponding to each box.
+            feat_shape (list[int]): feature map shape with value [B, _, H, W]
+            img_shape (list[int]): image shape in [h, w] format.
+        Returns:
+            tuple[dict,float]: The float value is mean avg_factor, the dict has
+                components below:
+                - center_heatmap_target (Tensor): targets of center heatmap, \
+                    shape (B, num_classes, H, W).
+                - wh_target (Tensor): targets of wh predict, shape \
+                    (B, 2, H, W).
+                - offset_target (Tensor): targets of offset predict, shape \
+                    (B, 2, H, W).
+                - wh_offset_target_weight (Tensor): weights of wh and offset \
+                    predict, shape (B, 2, H, W).
+        """
+        # img_h, img_w = img_shape[:2]
+        bs, _, feat_h, feat_w = feat_shape
+
+        height_ratio = feat_h / img_shape[:, 1]
+        width_ratio = feat_w / img_shape[:, 2]
+
+        center_heatmap_target = gt_bboxes[-1].new_zeros(
+            [bs, self.num_classes, feat_h, feat_w]
+        )
+        wh_target = gt_bboxes[:, -1].new_zeros([bs, 2, feat_h, feat_w])
+        offset_target = gt_bboxes[:, -1].new_zeros([bs, 2, feat_h, feat_w])
+        wh_offset_target_weight = gt_bboxes[:, -1].new_zeros([bs, 2, feat_h, feat_w])
+
+        # for batch_id in range(bs):
+        # gt_bbox = gt_bboxes[batch_id]
+        # gt_label = gt_labels[batch_id]
+        center_x = (gt_bboxes[:, 0] + gt_bboxes[:, 2]) * width_ratio / 2
+        center_y = (gt_bboxes[:, 1] + gt_bboxes[:, 3]) * height_ratio / 2
+        gt_centers = torch.cat([center_x.unsqueeze(1), center_y.unsqueeze(1)], dim = 1)
+
+        for j, ct in enumerate(gt_centers):
+            ctx_int, cty_int = ct.int()
+            ctx, cty = ct
+            scale_box_h = (gt_bboxes[j, 3] - gt_bboxes[j, 1]) * height_ratio[j]
+            scale_box_w = (gt_bboxes[j, 2] - gt_bboxes[j, 0]) * width_ratio[j]
+            radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.3)
+            radius = max(0, int(radius))
+            ind = gt_labels[j] - 1
+            print(ind, center_heatmap_target.shape)
+            gen_gaussian_target(
+                center_heatmap_target[j, ind, :, :], [ctx_int, cty_int], radius
+            )
+
+            wh_target[j, 0, cty_int, ctx_int] = scale_box_w
+            wh_target[j, 1, cty_int, ctx_int] = scale_box_h
+
+            offset_target[j, 0, cty_int, ctx_int] = ctx - ctx_int
+            offset_target[j, 1, cty_int, ctx_int] = cty - cty_int
+
+            wh_offset_target_weight[j, :, cty_int, ctx_int] = 1
+
+        return {
+            "center_heatmap_target": center_heatmap_target,
+            "wh_target": wh_target,
+            "offset_target": offset_target,
+            "wh_offset_target_weight": wh_offset_target_weight,
         }
