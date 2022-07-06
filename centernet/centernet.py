@@ -90,9 +90,6 @@ class CenterNet(nn.Module):
         offset_target = gt_bboxes[:, -1].new_zeros([bs, 2, feat_h, feat_w])
         wh_offset_target_weight = gt_bboxes[:, -1].new_zeros([bs, 2, feat_h, feat_w])
 
-        # for batch_id in range(bs):
-        # gt_bbox = gt_bboxes[batch_id]
-        # gt_label = gt_labels[batch_id]
         center_x = (gt_bboxes[:, 0] + gt_bboxes[:, 2]) * width_ratio / 2
         center_y = (gt_bboxes[:, 1] + gt_bboxes[:, 3]) * height_ratio / 2
         gt_centers = torch.cat([center_x.unsqueeze(1), center_y.unsqueeze(1)], dim=1)
@@ -105,7 +102,6 @@ class CenterNet(nn.Module):
             radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.3)
             radius = max(0, int(radius))
             ind = gt_labels[j] - 1
-            print(ind, center_heatmap_target.shape)
             gen_gaussian_target(
                 center_heatmap_target[j, ind, :, :], [ctx_int, cty_int], radius
             )
