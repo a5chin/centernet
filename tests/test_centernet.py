@@ -23,3 +23,11 @@ def test_model():
     assert loss["loss_center_heatmap"] is not None
     assert loss["loss_wh"] is not None
     assert loss["loss_offset"] is not None
+
+    det_bboxes, det_labels = model.get_bboxes(
+        center_heatmap_preds=feature["heatmap"],
+        wh_preds=feature["wh"],
+        offset_preds=feature["offset"],
+    )
+
+    assert det_bboxes.shape[:-1] == det_labels.shape

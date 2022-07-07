@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple
 
 import torch
 from torch import nn
@@ -6,7 +6,14 @@ from torch import nn
 from .backbone import resnet18
 from .losses import GaussianFocalLoss, L1Loss
 from .modules import CenterNetHead, CTResNetNeck
-from .utils import gaussian_radius, gen_gaussian_target
+from .utils import (
+    batched_nms,
+    gaussian_radius,
+    gen_gaussian_target,
+    get_local_maximum,
+    get_topk_from_heatmap,
+    transpose_and_gather_feat,
+)
 
 
 class CenterNet(nn.Module):
@@ -123,3 +130,152 @@ class CenterNet(nn.Module):
             "wh_target": wh_target,
             "offset_target": offset_target,
         }
+
+    def get_bboxes(
+        self,
+        center_heatmap_preds,
+        wh_preds,
+        offset_preds,
+        with_nms=False,
+    ) -> Tuple[torch.Tensor]:
+        """Transform network output for a batch into bbox predictions.
+
+        Args:
+            center_heatmap_preds (list[Tensor]): Center predict heatmaps for
+                all levels with shape (B, num_classes, H, W).
+            wh_preds (list[Tensor]): WH predicts for all levels with
+                shape (B, 2, H, W).
+            offset_preds (list[Tensor]): Offset predicts for all levels
+                with shape (B, 2, H, W).
+            with_nms (bool): If True, do nms before return boxes.
+                Default: False.
+
+        Returns:
+            list[tuple[Tensor, Tensor]]: Each item in result_list is 2-tuple.
+                The first item is an (n, 5) tensor, where 5 represent
+                (tl_x, tl_y, br_x, br_y, score) and the score between 0 and 1.
+                The shape of the second tensor in the tuple is (n,), and
+                each element represents the class label of the corresponding
+                box.
+        """
+        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds)
+
+        bboxes, labels = [], []
+        for img_id in range(len(center_heatmap_preds)):
+            bbox, label = self._get_bboxes_single(
+                center_heatmap_preds[img_id : img_id + 1],
+                wh_preds[img_id : img_id + 1],
+                offset_preds[img_id : img_id + 1],
+                with_nms=with_nms,
+            )
+            bboxes.append(bbox)
+            labels.append(label)
+
+        return torch.stack(bboxes), torch.stack(labels)
+
+    def _get_bboxes_single(
+        self,
+        center_heatmap_pred,
+        wh_pred,
+        offset_pred,
+        with_nms=True,
+    ) -> Tuple[torch.Tensor]:
+        """Transform outputs of a single image into bbox results.
+
+        Args:
+            center_heatmap_pred (Tensor): Center heatmap for current level with
+                shape (1, num_classes, H, W).
+            wh_pred (Tensor): WH heatmap for current level with shape
+                (1, num_classes, H, W).
+            offset_pred (Tensor): Offset for current level with shape
+                (1, corner_offset_channels, H, W).
+            img_meta (dict): Meta information of current image, e.g.,
+                image size, scaling factor, etc.
+            with_nms (bool): If True, do nms before return boxes.
+                Default: True.
+
+        Returns:
+            tuple[Tensor, Tensor]: The first item is an (n, 5) tensor, where
+                5 represent (tl_x, tl_y, br_x, br_y, score) and the score
+                between 0 and 1. The shape of the second tensor in the tuple
+                is (n,), and each element represents the class label of the
+                corresponding box.
+        """
+        batch_det_bboxes, batch_labels = self.decode_heatmap(
+            center_heatmap_pred,
+            wh_pred,
+            offset_pred,
+        )
+
+        det_bboxes = batch_det_bboxes.view([-1, 5])
+        det_labels = batch_labels.view(-1)
+
+        # batch_border = det_bboxes.new_tensor(img_meta["border"])[..., [2, 0, 2, 0]]
+        # det_bboxes[..., :4] -= batch_border
+
+        if with_nms:
+            det_bboxes, det_labels = self._bboxes_nms(det_bboxes, det_labels)
+
+        return det_bboxes, det_labels
+
+    def decode_heatmap(
+        self,
+        center_heatmap_pred: torch.Tensor,
+        wh_pred: torch.Tensor,
+        offset_pred: torch.Tensor,
+        img_shape: Tuple[int] = (512, 512),
+        k: int = 100,
+        kernel: int = 3,
+    ) -> Tuple[torch.Tensor]:
+        """Transform outputs into detections raw bbox prediction.
+
+        Args:
+            center_heatmap_pred (Tensor): center predict heatmap,
+                shape (B, num_classes, H, W).
+            wh_pred (Tensor): wh predict, shape (B, 2, H, W).
+            offset_pred (Tensor): offset predict, shape (B, 2, H, W).
+            img_shape (Tuple[int]): image shape in [h, w] format.
+            k (int): Get top k center keypoints from heatmap. Default 100.
+            kernel (int): Max pooling kernel for extract local maximum pixels.
+                Default 3.
+
+        Returns:
+            tuple[torch.Tensor]: Decoded output of CenterNetHead, containing
+                the following Tensors:
+
+                - batch_bboxes (Tensor): Coords of each box with shape (B, k, 5)
+                - batch_topk_labels (Tensor): Categories of each box with \
+                    shape (B, k)
+        """
+        height, width = center_heatmap_pred.shape[2:]
+        inp_h, inp_w = img_shape
+
+        center_heatmap_pred = get_local_maximum(center_heatmap_pred, kernel=kernel)
+
+        *batch_dets, topk_ys, topk_xs = get_topk_from_heatmap(center_heatmap_pred, k=k)
+        batch_scores, batch_index, batch_topk_labels = batch_dets
+
+        wh = transpose_and_gather_feat(wh_pred, batch_index)
+        offset = transpose_and_gather_feat(offset_pred, batch_index)
+        topk_xs = topk_xs + offset[..., 0]
+        topk_ys = topk_ys + offset[..., 1]
+        tl_x = (topk_xs - wh[..., 0] / 2) * (inp_w / width)
+        tl_y = (topk_ys - wh[..., 1] / 2) * (inp_h / height)
+        br_x = (topk_xs + wh[..., 0] / 2) * (inp_w / width)
+        br_y = (topk_ys + wh[..., 1] / 2) * (inp_h / height)
+
+        batch_bboxes = torch.stack([tl_x, tl_y, br_x, br_y], dim=2)
+        batch_bboxes = torch.cat((batch_bboxes, batch_scores[..., None]), dim=-1)
+
+        return batch_bboxes, batch_topk_labels + 1
+
+    def _bboxes_nms(self, bboxes, labels, max_num: int = 100) -> Tuple[torch.Tensor]:
+        if labels.numel() > 0:
+            bboxes, keep = batched_nms(
+                bboxes[:, :4], bboxes[:, -1].contiguous(), labels
+            )
+            if max_num > 0:
+                bboxes = bboxes[:max_num]
+                labels = labels[keep][:max_num]
+
+        return bboxes, labels
