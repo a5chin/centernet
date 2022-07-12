@@ -6,7 +6,7 @@ from torch import nn
 
 class CenterNetHead(nn.Module):
     def __init__(
-        self, in_channels: int = 64, feat_channels: int = 64, num_classes=4
+        self, in_channels: int = 64, feat_channels: int = 64, num_classes: int = 4
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
