@@ -20,11 +20,9 @@ class CTResNetNeck(nn.Module):
         in_channels,
         num_deconv_filters,
         num_deconv_kernels,
-        use_dcn=True,
     ) -> None:
         super().__init__()
         assert len(num_deconv_filters) == len(num_deconv_kernels)
-        self.use_dcn = use_dcn
         self.in_channels = in_channels
         self.deconv_layers = self._make_deconv_layer(
             num_deconv_filters, num_deconv_kernels
